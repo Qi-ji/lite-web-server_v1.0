@@ -1,0 +1,40 @@
+# LWS（lite-web-server）
+
+考察内容：
+1. 工具的使用 - git版本控制
+2. 工程项目搭建 - 目录结构、编译脚本、项目文本
+3. 进程和进程间通信
+4. socket通信、网络传输、网络协议、网络数据解析
+5. 信号处理、线程的使用
+
+基本要求：
+1. 在github上创建仓库，将项目文件的每一次改动都提交到git远程仓库
+2. 熟悉基本的git命令 - add commit pull push checkout branch clone log status
+3. 提供项目说明文档，包括简介、编译方式、使用方法等
+4. 学习基本的版本控制方法 - 代码提交、更新、比较、回退、分支、合并等
+5. 注意代码命名规范，学会写注释和伪代码
+6. 分解需求，代码随写随测，注意代码对内存的使用和cpu的消耗的影响
+
+代码基本功能实现：
+1. 实现一个本地的socket链接服务
+绑定端口8000，支持多客户端连接
+实现数据接收，显示接收的数据，然后自动关闭客户端的连接
+继续等待连接，循环处理
+2. 实现web界面数据交互
+使用chrome浏览器测试本地socket服务的效果
+xml基本格式
+实现数据回复，hello world
+实现数据回复，显示图片
+3. 基础功能模块分离，做到模块可移植
+socket基础功能
+http数据解析、http数据构建
+xml格式解析、xml数据构建
+
+知识点：
+1. socket基本功能：
+socket、close、bind、listen、accept、connect、recv/send、recvfrom/sendto、read/write、select/poll/epoll
+2. socket属性设置：读/写超时、地址重用、长连接心跳、阻塞/非阻塞
+3. socket连接过程：三次握手、四次挥手
+4. 网络地址转换、网络域名解析、网络调试工具（ifconfig、netstat、tcpdump、wireshark）
+5. http协议：组成、字段意义、解析方式、数据处理
+6. xml格式解析和生成
