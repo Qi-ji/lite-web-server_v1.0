@@ -9,187 +9,41 @@
 #include <errno.h>
 #include <sys/time.h>
 
-#define DEFAULT_PORT    9003    //默认端口
-#define BUFF_SIZE       1024    //buffer大小
-#define SELECT_TIMEOUT  5       //select的timeout seconds
+#define DEFAULT_PORT    8888    					//the default port
+#define BUFF_SIZE       1024    					//the size of buffer
+#define SELECT_TIMEOUT  5       					//timeout seconds for 'select'
 #define SERADDR		"192.168.1.141"
 #define PRASE_MAX_LINE_NUM  20
 
-void setSockNonBlock(int sock);
-int updateMaxfd(fd_set fds, int maxfd);
-int sock_bind_listen (void);
-void Parse_Buf(char *buf);
-
-int main(int argc, char *argv[]) {
-	
-	int sock_fd;
-	
-	/*socket、bind and listen to client*/
-	sock_fd = sock_bind_listen();
-	
-	/*listen to client.use select() to loop listen client*/
-	//创建并初始化select需要的参数(这里仅监视read)，并把sock添加到fd_set中*****************
-    fd_set readfds;
-    fd_set readfds_bak; //backup for readfds(由于每次select之后会更新readfds，因此需要backup)
-    struct timeval timeout;
-    int maxfd;
-    maxfd = sock_fd;
-    FD_ZERO(&readfds);					//将指定的文件描述符集清空
-    FD_ZERO(&readfds_bak);
-    FD_SET(sock_fd, &readfds_bak);			//用于在文件描述符集合中增加一个新的文件描述符
-
-    //循环接受client请求
-    int new_sock;
-    struct sockaddr_in client_addr;
-    socklen_t client_addr_len;
-    char client_ip_str[INET_ADDRSTRLEN];
-    int res;
-    int i;
-    char buffer[BUFF_SIZE];
-	//const char *str = "Maize,it is time to eat lunch!";
-    int recv_size;
-
-    while (1) {
-
-        //注意select之后readfds和timeout的值都会被修改，因此每次都进行重置
-        readfds = readfds_bak;
-        maxfd = updateMaxfd(readfds, maxfd);        //更新maxfd
-        timeout.tv_sec = SELECT_TIMEOUT;
-        timeout.tv_usec = 0;
-        printf("selecting maxfd=%d\n", maxfd);
-
-        //select(这里没有设置writefds和errorfds，如有需要可以设置)
-        res = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
-        if (res == -1) {
-            perror("select failed");
-            exit(EXIT_FAILURE);
-        } else if (res == 0) {
-            fprintf(stderr, "no socket ready for read within %d secs\n", SELECT_TIMEOUT);
-            continue;
-        }
-
-        //检查每个socket，并进行读(如果是sock则accept)
-        for (i = 0; i <= maxfd; i++) {
-            if (!FD_ISSET(i, &readfds)) {
-                continue;
-            }
-            //可读的socket
-            if ( i == sock_fd) {
-                //当前是server的socket，不进行读写而是accept新连接
-                client_addr_len = sizeof(client_addr);
-                new_sock = accept(sock_fd, (struct sockaddr *) &client_addr, &client_addr_len);
-                if (new_sock == -1) {
-                    perror("accept failed");
-                    exit(EXIT_FAILURE);
-                }
-                if (!inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip_str, sizeof(client_ip_str))) {
-                    perror("inet_ntop failed");
-                    exit(EXIT_FAILURE);
-                }
-                printf("accept a client from: %s\n", client_ip_str);
-				
-                //设置new_sock为non-blocking
-                setSockNonBlock(new_sock);
-				
-                //把new_sock添加到select的侦听中
-                if (new_sock > maxfd) {
-                    maxfd = new_sock;
-                }
-                FD_SET(new_sock, &readfds_bak);
-            } else {
-                //当前是client连接的socket，可以写(read from client)
-                memset(buffer, 0, sizeof(buffer));
-                if ( (recv_size = recv(i, buffer, sizeof(buffer), 0)) == -1 ) {
-                    perror("recv failed");
-                    exit(EXIT_FAILURE);
-                }
-                printf("recved from new_sock=%d :\n%s(%d length string)\n", i, buffer, recv_size);
-				Parse_Buf(buffer);
-                //立即将收到的内容写回去，并关闭连接
-				memset(buffer, 0, sizeof(buffer));
-				//if ( send(i, str, strlen(str), 0) == -1 ) {
-                if ( send(i, buffer, recv_size, 0) == -1 ) {
-                    perror("send failed");
-                    exit(EXIT_FAILURE);
-                }
-                printf("send to new_sock=%d done\n", i);
-                if ( close(i) == -1 ) {
-                    perror("close failed");
-                    exit(EXIT_FAILURE);
-                }
-                printf("close new_sock=%d done\n", i);
-                //将当前的socket从select的侦听中移除
-                FD_CLR(i, &readfds_bak);
-            }
-        }
-    }
-	
-    return 0;
-}
-
-
-/**
-  *@brief  socket、bind and listen to client
-  *@param  none 
-  *@retval the socket descriptor
-  */	
-int sock_bind_listen (void)
+struct http_str 
 {
-    int sock;
-	/*理论上建立socket时是指定协议，应该用PF_xxxx，设置地址时应该用AF_xxxx。\
-	当然AF_INET和PF_INET的值是相同的，混用也不会有太大的问题。*/
-    if ( (sock = socket(PF_INET, SOCK_STREAM, 0)) == -1 ) {					//建立socket连接
-        perror("socket failed, ");
-        exit(EXIT_FAILURE);
-    }
-    printf("socket done\n");
+	char *p;
+	int size;
+};
 
-    /*防止出现 'address already in use' error message*/
-    int yes = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int))) {
-        perror("setsockopt failed");
-        exit(EXIT_FAILURE);
-    }
+struct http_message 
+{
+	int status_code;
+	struct http_str method;
+	struct http_str uri;
+	struct http_str uri_query;
+	struct http_str protocol;
+	struct http_str header[40];
+	struct http_str header_value[40];
+	struct http_str body;
+};
 
-
-    //设置sock为non-blocking
-    setSockNonBlock(sock);
-
-    //创建要bind的socket address*********************************************************
-    struct sockaddr_in bind_addr;
-    memset(&bind_addr, 0, sizeof(bind_addr));
-    bind_addr.sin_family = AF_INET;
-    //bind_addr.sin_addr.s_addr = htonl(SERADDR);  //设置接受任意地址
-	bind_addr.sin_addr.s_addr = inet_addr(SERADDR);
-    bind_addr.sin_port = htons(DEFAULT_PORT);               //将host byte order转换为network byte order
-
-    //bind sock到创建的socket address上****************************************************
-    if ( bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) == -1 ) {
-        perror("bind failed, ");
-        exit(EXIT_FAILURE);
-    }
-    printf("bind done\n");
-
-    //listen*************************************************设置监听队列最多为5个*********
-    if ( listen(sock, 5) == -1) {
-        perror("listen failed.");
-        exit(EXIT_FAILURE);
-    }
-    printf("listen done\n");
-	return sock;
-}
-	
-	
-	
+int line_num = 0;
 
 /**
   *@brief  set the socket in non-blocking mode
   *@param  sock --the socket descriptor
   *@retval none
   */
-void setSockNonBlock(int sock) {
+void setSockNonBlock(int sock) 
+{
     int flags;
-    flags = fcntl(sock, F_GETFL, 0); 					 //获得block原来的属性
+    flags = fcntl(sock, F_GETFL, 0); 					 
     if (flags < 0) {
         perror("fcntl(F_GETFL) failed");
         exit(EXIT_FAILURE);
@@ -201,47 +55,296 @@ void setSockNonBlock(int sock) {
 }
 
 /**
+  *@brief  socket、bind and listen to client
+  *@param  none 
+  *@retval the socket descriptor
+  */	
+int sock_bind_listen (void)
+{
+    int sock;
+	/*理论上建立socket时是指定协议，应该用PF_xxxx，设置地址时应该用AF_xxxx。\
+	当然AF_INET和PF_INET的值是相同的，混用也不会有太大的问题。*/
+    if ( (sock = socket(PF_INET, SOCK_STREAM, 0)) == -1 ) {					//socket
+        perror("socket failed, ");
+        exit(EXIT_FAILURE);
+    }
+    printf("socket done\n");
+
+    /***start:prevent the errot: 'address already in use' error message***/
+    int yes = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int))) {
+        perror("setsockopt failed");
+        exit(EXIT_FAILURE);
+    }
+	 /***end:prevent the errot: 'address already in use' error message***/
+    /*set the sock as non-blocking.*/
+    setSockNonBlock(sock);
+
+    struct sockaddr_in bind_addr;
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.sin_family = AF_INET;
+    //bind_addr.sin_addr.s_addr = htonl(SERADDR);  							//设置接受任意地址
+	bind_addr.sin_addr.s_addr = inet_addr(SERADDR);
+    bind_addr.sin_port = htons(DEFAULT_PORT);               				//change 'host byte order'as 'network byte order'
+
+    /****************************start:bind *******************/
+    if ( bind(sock, (struct sockaddr *) &bind_addr, sizeof(bind_addr)) == -1 ) {
+        perror("bind failed, ");
+        exit(EXIT_FAILURE);
+    }
+    printf("bind done\n");
+    /****************************end:bind *********************/
+    /****************************start:listen *****************/
+    if ( listen(sock, 5) == -1) {
+        perror("listen failed.");
+        exit(EXIT_FAILURE);
+    }
+    printf("listen done\n");
+	/****************************end:bind *********************/
+	return sock;
+}
+	
+/**
   *@brief  update the maxfd
   *@param  fds--the fd_set type variable
   *		   maxfd--the max fd
   *@retval the max fd
   */
-int updateMaxfd(fd_set fds, int maxfd) {
+int updateMaxfd(fd_set fds, int maxfd)
+{
     int i;
     int new_maxfd = 0;
-    for (i = 0; i <= maxfd; i++) {
-        if (FD_ISSET(i, &fds) && i > new_maxfd) {		//检查i是否在fds这个集合里面
+    for (i = 0; i <= maxfd; i++) 
+	{
+        if (FD_ISSET(i, &fds) && i > new_maxfd)
+		{		//检查i是否在fds这个集合里面
             new_maxfd = i;
-        }
+		}
     }
         return new_maxfd;
     }
+
+/**
+  *@brief  parse the message from client.
+  *@param  buf - the message from client.
+  *@retval the pointer to the struct 'http_message',which contains the parsed message.
+  */	
+struct http_message *parse_buf(char *buf)
+{
+	const char find_balnk[2] = " ";						
+	const char find_Enter[5] = "\r\n";					
+	char *token;												
+	int i = 1;
+	
+	char *parse_lineinfo[PRASE_MAX_LINE_NUM];
+
+	struct http_message  *http_message_t;
+	
+	token = strtok(buf, find_Enter);									//find out the line break,and then parase the info by line first.
+	while(token != NULL)
+	{
+		parse_lineinfo[line_num] = token;										
+		line_num++;
+		token = strtok(NULL, find_Enter);
+	}
+	
+	/* **********************start: parse the recv into the 'http_message'*********************************/
+	http_message_t->method.p = strstr(parse_lineinfo[0], find_balnk);
+	http_message_t->method.p += strlen(find_balnk);
+	http_message_t->uri.p = strstr(http_message_t->method.p, find_balnk);
+	http_message_t->uri.p += strlen(find_balnk);
+	http_message_t->protocol.p = strstr(http_message_t->method.p, find_balnk);
+	http_message_t->protocol.p += strlen(find_balnk);	
+
+	http_message_t->protocol.size = strlen(http_message_t->protocol.p);	
+	http_message_t->uri.size = (strlen(http_message_t->uri.p) - http_message_t->protocol.size -1);
+	http_message_t->method.size = (strlen(http_message_t->method.p) - (strlen(http_message_t->uri.p)) -1);
+		
+	for(i=1;i<line_num;i++)
+	{
+		if(strlen(parse_lineinfo[i]) == 0)
+		{
+			http_message_t->body.p = parse_lineinfo[i+1];
+		}
+		
+		http_message_t->header[i].p = strstr(parse_lineinfo[i], find_balnk);
+		http_message_t->header[i].p += strlen(find_balnk);
+		http_message_t->header_value[i].p = strstr(http_message_t->method.p, find_balnk);
+		http_message_t->header_value[i].p += strlen(find_balnk);
+		
+		http_message_t->header_value[i].size = strlen(http_message_t->header_value[i].p);
+		http_message_t->header[i].size = strlen((http_message_t->header[i].p - strlen(http_message_t->header_value[i].p) -1));
+	}
+	/* **********************end: parse the recv into the 'http_message'*********************************/
+	return http_message_t;
+}	
+
+/**
+  *@brief  send the parased buffer back to client.
+  *@param  sock_fd - the file descriptor created by 'accept'.
+  *		   http_message_t - the pointer to the struct 'http_message',which contains the parsed message. 
+  *@retval none
+  */
+void send_message (int sock_fd, struct http_message *http_message_t)	
+{
+	int ret,i;
+	
+    ret = send(sock_fd, http_message_t->method.p, http_message_t->method.size, 0); 		
+    ret = send(sock_fd, http_message_t->uri.p, http_message_t->uri.size, 0); 			
+    ret = send(sock_fd, http_message_t->protocol.p, http_message_t->protocol.size, 0); 	
+	
+    for(i=1; i<line_num; i++)
+    {
+        ret = send(sock_fd, http_message_t->header[i].p, http_message_t->header[i].size, 0); 			
+        ret = send(sock_fd, http_message_t->header_value[i].p, http_message_t->header_value[i].size, 0); 			
+    }
+	
+	ret = send(sock_fd, http_message_t->body.p, http_message_t->method.size, 0); 
+	if ( ret == -1 ) 	//send the parased buffer back to client.
+	{
+        perror("send failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("send to client_sock_fd=%d done\n", sock_fd);
+}
+	
+int main(int argc, char *argv[]) {
+	
+	int sock_fd;
+	
+
+	
+    int client_sock_fd;
+    struct sockaddr_in client_addr;
+    int client_addr_len;
+	
+    char client_ip_str[20];
+	char buffer[BUFF_SIZE];
+    int recv_len,res, i;	
+
+
+	struct http_message  *http_message_toshend;	
+	
+	fd_set readfds, readfds_bak;							//backup for readfds
+    struct timeval timeout;
+    int maxfd; 												//the maxed fd 
+	/*socket、bind and listen to client*/
+	sock_fd = sock_bind_listen();							
+	
+    maxfd = sock_fd;
+    FD_ZERO(&readfds);										//clear the specified file descriptor set
+    FD_SET(sock_fd, &readfds);								//add a new file descriptoy in the set
+
+    while (1) 
+	{
+		readfds_bak = readfds;								//reload the readfds
+        maxfd = updateMaxfd(readfds, maxfd);   				//update maxfd, because it has been changed when accept a client.
+        timeout.tv_sec = SELECT_TIMEOUT;
+        timeout.tv_usec = 0;
+        printf("selecting maxfd=%d\n", maxfd);
+
+        res = select(maxfd + 1, &readfds_bak, NULL, NULL, &timeout);
+        if (res == -1) 
+		{
+            perror("select failed");
+            exit(EXIT_FAILURE);
+        } 
+		else if (res == 0) 
+		{
+            fprintf(stderr, "no socket ready for read within %d secs\n", SELECT_TIMEOUT);
+            continue;
+        }
+															//loop to check every fd in the fd_set
+        for (i=0; i<maxfd+1; i++) 
+		{
+            if (!FD_ISSET(i, &readfds_bak)) 
+			{
+                continue;
+            }
+													
+            if (i == sock_fd) 								//i == sock_fd means there is no cilent accepat, we wait for a new accept
+			{
+                client_addr_len = sizeof(client_addr);		
+                client_sock_fd = accept(sock_fd, (struct sockaddr *) &client_addr, &client_addr_len);
+                if (client_sock_fd == -1) 
+				{
+                    perror("accept failed");
+                    exit(EXIT_FAILURE);
+                }
+                if (!inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip_str, sizeof(client_ip_str))) {
+                    perror("inet_ntop failed");
+                    exit(EXIT_FAILURE);
+                }
+                printf("accept a client from: %s\n", client_ip_str);
+				
+                setSockNonBlock(client_sock_fd);			//set 'client_sock_fd' as 'non-blocking'	
+                FD_SET(client_sock_fd, &readfds_bak);		//add 'client_sock_fd'int select's listen(fd_set).	
+				
+                if (client_sock_fd > maxfd) 				//update the maxfd(add the new sockfd 'client_sock_fd' from 'accept') 
+				{
+                    maxfd = client_sock_fd;
+                }
+            } 
+			else 											//'i'is equal the 'client_sock_fd', then recv from client.
+			{
+                memset(buffer, 0, sizeof(buffer));
+                if ( (recv_len = recv(i, buffer, sizeof(buffer), 0)) == -1 )
+				{
+                    perror("recv failed");
+                    exit(EXIT_FAILURE);
+                }
+                printf("recved from client_sock_fd=%d :\n%s(%d length string)\n", i, buffer, recv_len);
+				
+				/*parase the buffer from client.*/
+				http_message_toshend = parse_buf(buffer);	
+				/*send message after parase to client.*/
+				send_message(i, http_message_toshend);		
+                
+				if ( close(i) == -1 ) 						//close this 'client_sock_fd'
+				{
+                    perror("close failed");
+                    exit(EXIT_FAILURE);
+                }
+                printf("close client_sock_fd=%d done\n", i);
+															//remove 'client_sock_fd' from the fd_set.
+                FD_CLR(i, &readfds_bak);
+            }
+        }
+    }
+    return 0;
+}
+
+
+
 	
 /**
   *@brief  解析客户端发来的信息，将其信息按行解析出来
   *@param  收到的客户端的信息
   *@retval 无
-  */	
-void Parse_Buf(char *buf)
+  */
+/*  
+void parse_buf(char *buf)
 {
-	const char Find_balnk[2] = " ";			//查找空格
-	const char Find_Enter[5] = "\r\n";		//查找回车
-	char *token = NULL;					//获得strtok函数的返回指针，指向分割后的第一个字符串
+	const char Find_balnk[2] = " ";						
+	const char Find_Enter[5] = "\r\n";					
+	char *token;												
 	//char parse_line[20][100] = {0};				//放置按行解析后每行的信息。
 	int i = 1,j = 1;
 	
-	typedef struct _parse_line 
+	typedef struct parse_line_t
 	{
 		int line_num;
 		char *info_line;
 	}parse_line;
 	
-	parse_line parse_lineinfo[PRASE_MAX_LINE_NUM];			//这里可以不进行初始化了吧？
+//	parse_line parse_lineinfo[PRASE_MAX_LINE_NUM];			
+	
 	
 	token = strtok(buf, Find_Enter);		//查找buf中的换行符，先将获得的信息按行解析
 	while(token != NULL)
 	{
-		parse_lineinfo[i].info_line = token;		//将获得的第一行放到结构体数组中
+//		parse_lineinfo[i].info_line = token;		//将获得的第一行放到结构体数组中
+
 		i++;
 		token = strtok(NULL, Find_Enter);
 	}
@@ -251,11 +354,35 @@ void Parse_Buf(char *buf)
 	}	
 		
 	}	
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
 	
 	
-	
-	
-	
-	
-	
-	
+
+ 
