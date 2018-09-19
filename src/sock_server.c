@@ -10,7 +10,7 @@
 #include <sys/time.h>
 
 #define DEFAULT_PORT    8888    					//the default port
-#define BUFF_SIZE       1024    					//the size of buffer
+#define BUFF_SIZE       1024	   					//the size of buffer
 #define SELECT_TIMEOUT  5       					//timeout seconds for 'select'
 #define SERADDR		"192.168.1.141"
 #define PRASE_MAX_LINE_NUM  20
@@ -21,7 +21,7 @@ struct http_str
 	int size;
 };
 
-struct http_message 
+typedef struct http_message 
 {
 	int status_code;
 	struct http_str method;
@@ -31,7 +31,7 @@ struct http_message
 	struct http_str header[40];
 	struct http_str header_value[40];
 	struct http_str body;
-};
+}http_message_t;
 
 int line_num = 0;
 
@@ -40,6 +40,7 @@ int line_num = 0;
   *@param  sock --the socket descriptor
   *@retval none
   */
+  /*
 void setSockNonBlock(int sock) 
 {
     int flags;
@@ -53,7 +54,7 @@ void setSockNonBlock(int sock)
         exit(EXIT_FAILURE);
     }
 }
-
+*/
 /**
   *@brief  socket、bind and listen to client
   *@param  none 
@@ -78,7 +79,7 @@ int sock_bind_listen (void)
     }
 	 /***end:prevent the errot: 'address already in use' error message***/
     /*set the sock as non-blocking.*/
-    setSockNonBlock(sock);
+    // setSockNonBlock(sock);
 
     struct sockaddr_in bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
@@ -129,7 +130,7 @@ int updateMaxfd(fd_set fds, int maxfd)
   *@param  buf - the message from client.
   *@retval the pointer to the struct 'http_message',which contains the parsed message.
   */	
-struct http_message *parse_buf(char *buf)
+http_message_t parse_buf(char *buf)
 {
 	const char find_balnk[2] = " ";						
 	const char find_Enter[5] = "\r\n";					
@@ -138,7 +139,7 @@ struct http_message *parse_buf(char *buf)
 	
 	char *parse_lineinfo[PRASE_MAX_LINE_NUM];
 
-	struct http_message  *http_message_t;
+	http_message_t hm ;
 	
 	token = strtok(buf, find_Enter);									//find out the line break,and then parase the info by line first.
 	while(token != NULL)
@@ -149,34 +150,35 @@ struct http_message *parse_buf(char *buf)
 	}
 	
 	/* **********************start: parse the recv into the 'http_message'*********************************/
-	http_message_t->method.p = strstr(parse_lineinfo[0], find_balnk);
-	http_message_t->method.p += strlen(find_balnk);
-	http_message_t->uri.p = strstr(http_message_t->method.p, find_balnk);
-	http_message_t->uri.p += strlen(find_balnk);
-	http_message_t->protocol.p = strstr(http_message_t->method.p, find_balnk);
-	http_message_t->protocol.p += strlen(find_balnk);	
+	hm.method.p = strstr(parse_lineinfo[0], find_balnk);
+	hm.method.p += strlen(find_balnk);
+	hm.uri.p = strstr(hm.method.p, find_balnk);
+	hm.uri.p += strlen(find_balnk);
+	hm.protocol.p = strstr(hm.method.p, find_balnk);
+	hm.protocol.p += strlen(find_balnk);	
 
-	http_message_t->protocol.size = strlen(http_message_t->protocol.p);	
-	http_message_t->uri.size = (strlen(http_message_t->uri.p) - http_message_t->protocol.size -1);
-	http_message_t->method.size = (strlen(http_message_t->method.p) - (strlen(http_message_t->uri.p)) -1);
+	hm.protocol.size = strlen(hm.protocol.p);	
+	hm.uri.size = (strlen(hm.uri.p) - hm.protocol.size -1);
+	hm.method.size = (strlen(hm.method.p) - (strlen(hm.uri.p)) -1);
 		
 	for(i=1;i<line_num;i++)
 	{
 		if(strlen(parse_lineinfo[i]) == 0)
 		{
-			http_message_t->body.p = parse_lineinfo[i+1];
+			hm.body.p = parse_lineinfo[i+1];
+			
 		}
 		
-		http_message_t->header[i].p = strstr(parse_lineinfo[i], find_balnk);
-		http_message_t->header[i].p += strlen(find_balnk);
-		http_message_t->header_value[i].p = strstr(http_message_t->method.p, find_balnk);
-		http_message_t->header_value[i].p += strlen(find_balnk);
+		hm.header[i].p = strstr(parse_lineinfo[i], find_balnk);
+		hm.header[i].p += strlen(find_balnk);
+		hm.header_value[i].p = strstr(hm.method.p, find_balnk);
+		hm.header_value[i].p += strlen(find_balnk);
 		
-		http_message_t->header_value[i].size = strlen(http_message_t->header_value[i].p);
-		http_message_t->header[i].size = strlen((http_message_t->header[i].p - strlen(http_message_t->header_value[i].p) -1));
+		hm.header_value[i].size = strlen(hm.header_value[i].p);
+		hm.header[i].size = strlen((hm.header[i].p - strlen(hm.header_value[i].p) -1));
 	}
 	/* **********************end: parse the recv into the 'http_message'*********************************/
-	return http_message_t;
+	return hm;
 }	
 
 /**
@@ -185,21 +187,22 @@ struct http_message *parse_buf(char *buf)
   *		   http_message_t - the pointer to the struct 'http_message',which contains the parsed message. 
   *@retval none
   */
-void send_message (int sock_fd, struct http_message *http_message_t)	
+void send_message (int sock_fd,  http_message_t hm_pa)	
 {
-	int ret,i;
+	int ret,i,a = 5;
 	
-    ret = send(sock_fd, http_message_t->method.p, http_message_t->method.size, 0); 		
-    ret = send(sock_fd, http_message_t->uri.p, http_message_t->uri.size, 0); 			
-    ret = send(sock_fd, http_message_t->protocol.p, http_message_t->protocol.size, 0); 	
+    ret = send(sock_fd, hm_pa.method.p, hm_pa.method.size, 0); 		
+    ret = send(sock_fd, hm_pa.uri.p, hm_pa.uri.size, 0); 			
+    ret = send(sock_fd, hm_pa.protocol.p, hm_pa.protocol.size, 0); 	
+    ret = send(sock_fd, hm_pa.protocol.p, hm_pa.protocol.size, 0); 	
 	
     for(i=1; i<line_num; i++)
     {
-        ret = send(sock_fd, http_message_t->header[i].p, http_message_t->header[i].size, 0); 			
-        ret = send(sock_fd, http_message_t->header_value[i].p, http_message_t->header_value[i].size, 0); 			
+        ret = send(sock_fd, hm_pa.header[i].p, hm_pa.header[i].size, 0); 			
+        ret = send(sock_fd, hm_pa.header_value[i].p, hm_pa.header_value[i].size, 0); 			
     }
-	
-	ret = send(sock_fd, http_message_t->body.p, http_message_t->method.size, 0); 
+
+	ret = send(sock_fd, hm_pa.body.p, hm_pa.method.size, 0); 
 	if ( ret == -1 ) 	//send the parased buffer back to client.
 	{
         perror("send failed");
@@ -223,7 +226,7 @@ int main(int argc, char *argv[]) {
     int recv_len,res, i;	
 
 
-	struct http_message  *http_message_toshend;	
+	http_message_t  hm_toclient ;	
 	
 	fd_set readfds, readfds_bak;							//backup for readfds
     struct timeval timeout;
@@ -269,15 +272,15 @@ int main(int argc, char *argv[]) {
                 if (client_sock_fd == -1) 
 				{
                     perror("accept failed");
-                    exit(EXIT_FAILURE);
+                   // exit(EXIT_FAILURE);
                 }
                 if (!inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip_str, sizeof(client_ip_str))) {
                     perror("inet_ntop failed");
-                    exit(EXIT_FAILURE);
+                   // exit(EXIT_FAILURE);
                 }
                 printf("accept a client from: %s\n", client_ip_str);
 				
-                setSockNonBlock(client_sock_fd);			//set 'client_sock_fd' as 'non-blocking'	
+                // setSockNonBlock(client_sock_fd);			//set 'client_sock_fd' as 'non-blocking'	
                 FD_SET(client_sock_fd, &readfds_bak);		//add 'client_sock_fd'int select's listen(fd_set).	
 				
                 if (client_sock_fd > maxfd) 				//update the maxfd(add the new sockfd 'client_sock_fd' from 'accept') 
@@ -291,19 +294,19 @@ int main(int argc, char *argv[]) {
                 if ( (recv_len = recv(i, buffer, sizeof(buffer), 0)) == -1 )
 				{
                     perror("recv failed");
-                    exit(EXIT_FAILURE);
+                   // exit(EXIT_FAILURE);
                 }
                 printf("recved from client_sock_fd=%d :\n%s(%d length string)\n", i, buffer, recv_len);
 				
 				/*parase the buffer from client.*/
-				http_message_toshend = parse_buf(buffer);	
+				hm_toclient = parse_buf(buffer);	
 				/*send message after parase to client.*/
-				send_message(i, http_message_toshend);		
+				send_message(i, hm_toclient);		
                 
 				if ( close(i) == -1 ) 						//close this 'client_sock_fd'
 				{
                     perror("close failed");
-                    exit(EXIT_FAILURE);
+                    //exit(EXIT_FAILURE);
                 }
                 printf("close client_sock_fd=%d done\n", i);
 															//remove 'client_sock_fd' from the fd_set.
