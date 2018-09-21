@@ -33,6 +33,12 @@ typedef struct http_message
 	struct http_str body;
 }http_message_t;
 
+// typedef struct ret_message
+// {
+	// struct http_str header;
+	// struct http_str message;
+// }
+
 int line_num = 0;
 
 /**
@@ -149,10 +155,11 @@ http_message_t parse_buf(char *buf)
 		line_num++;
 		token = strtok(NULL, find_Enter);
 	}
-	
+	// printf("line_1 =%s\n",parse_lineinfo[0]);
+	// printf("line_2 =%s\n",parse_lineinfo[1]);
+	// printf("line_3 =%s\n",parse_lineinfo[2]);
 	/* **********************start: parse the recv into the 'http_message'*********************************/
-	hm.method.p = strstr(parse_lineinfo[0], find_balnk);
-	hm.method.p += strlen(find_balnk);
+	hm.method.p = parse_lineinfo[0];
 	hm.uri.p = strstr(hm.method.p, find_balnk);
 	hm.uri.p += strlen(find_balnk);
 	hm.protocol.p = strstr(hm.uri.p, find_balnk);
@@ -162,30 +169,28 @@ http_message_t parse_buf(char *buf)
 	hm.protocol.size = strlen(hm.protocol.p);	
 	hm.uri.size = (strlen(hm.uri.p) - hm.protocol.size -1);
 	hm.method.size = (strlen(hm.method.p) - (strlen(hm.uri.p)) -1);
-		printf("%.*s\n",hm.method.size, hm.method.p);
-	printf("%.*s\n",hm.uri.size, hm.uri.p);
-	printf("%.*s\n",hm.protocol.size, hm.protocol.p);
 	
-	printf("strlen = %d\n", strlen(parse_lineinfo[10]));
-	printf("line_num = %d\n", line_num);
+	// printf("%.*s\n",hm.method.size, hm.method.p);
+	// printf("%.*s\n",hm.uri.size, hm.uri.p);
+	// printf("%.*s\n",hm.protocol.size, hm.protocol.p);
+
 	
 	for(i=1;i<line_num;i++)
 	{
-		if(strlen(parse_lineinfo[i]) < 2)
+		if(strlen(parse_lineinfo[i]) < 3)
 		{
 			if((i+1) >= line_num)
-			{
-				printf("123123i=%d\n", i);				
+			{	
+		printf("1231111111111111111111111111111111\n");
 				continue;
 			}
 			hm.body.p = parse_lineinfo[i+1];
+			printf("1231111111111111111111111111111111\n");
 			break;
 			
 		}
 		
-		hm.header[i].p = strstr(parse_lineinfo[i], find_balnk);
-		hm.header[i].p += strlen(find_balnk);
-		hm.header_value[i].p = strstr(hm.header[i].p, find_colon);
+		hm.header[i].p = parse_lineinfo[i];
 		hm.header_value[i].p = strstr(hm.header[i].p, find_colon);
 		hm.header_value[i].p += strlen(find_colon);
 		
@@ -193,8 +198,89 @@ http_message_t parse_buf(char *buf)
 		hm.header[i].size = (strlen(hm.header[i].p)) - (strlen(hm.header_value[i].p)) -1;
 	}
 	/* **********************end: parse the recv into the 'http_message'*********************************/
+	
+	
 	return hm;
 }	
+
+/**
+  *@brief  send the parased buffer back to client.
+  *@param  sock_fd - the file descriptor created by 'accept'.
+  *		   http_message_t - the pointer to the struct 'http_message',which contains the parsed message. 
+  *@retval none
+  */
+
+void send_message (int sock_fd,  http_message_t hm_pa)	
+{
+	int ret,i,a = 5;
+	
+    ret = send(sock_fd, hm_pa.method.p, hm_pa.method.size, 0); 		
+    ret = send(sock_fd, hm_pa.uri.p, hm_pa.uri.size, 0); 	
+    ret = send(sock_fd, hm_pa.protocol.p, hm_pa.protocol.size, 0); 	
+	ret = send(sock_fd, "\r\n      next is the header\r\n", strlen("\r\n      next is the header\r\n"), 0);
+	
+    for(i=1; i<line_num; i++)
+    {
+        ret = send(sock_fd, hm_pa.header[i].p, hm_pa.header[i].size, 0); 	
+        ret = send(sock_fd, "\r\n", strlen("\r\n"), 0); 			
+    }  
+	ret = send(sock_fd, "\r\n      next is the message\r\n", strlen("\r\n       next is the message\r\n"), 0);
+	
+	for(i=1; i<line_num; i++)
+    {
+        ret = send(sock_fd, hm_pa.header_value[i].p, hm_pa.header_value[i].size, 0); 	
+        ret = send(sock_fd, "\r\n", strlen("\r\n"), 0); 			
+    }
+
+	ret = send(sock_fd, hm_pa.body.p, hm_pa.method.size, 0); 
+	if ( ret == -1 ) 	//send the parased buffer back to client.
+	{
+        perror("send failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("send to client_sock_fd=%d done\n", sock_fd);
+}
+
+/**
+  *@brief  send the parased buffer back to client.
+  *@param  sock_fd - the file descriptor created by 'accept'.
+  *		   http_message_t - the pointer to the struct 'http_message',which contains the parsed message. 
+  *@retval none
+  */
+
+void printf_message (int sock_fd,  http_message_t hm_pa)	
+{
+	int ret,i,a = 5;
+	
+    printf("method:%.*s\n", hm_pa.method.size, hm_pa.method.p); 		
+    // printf("method:%s\n", hm_pa.method.p); 		
+    // printf("method:%d\n", hm_pa.method.size); 		
+    printf("uri:%.*s\n", hm_pa.uri.size,hm_pa.uri.p); 		
+    printf("protocol:%.*s\n", hm_pa.protocol.size,hm_pa.protocol.p); 		
+     	
+	printf("\n      Next is the header\n");
+	
+    for(i=1; i<line_num; i++)
+    {
+        // printf("Header:\n");
+		printf("%.*s\n", hm_pa.header[i].size,hm_pa.header[i].p); 	 			
+    }  
+	printf("\n      Next is the message\n");
+	
+	for(i=1; i<line_num; i++)
+    {
+        // printf("Message:\n");
+		printf("%.*s\n", hm_pa.header_value[i].size,hm_pa.header_value[i].p); 	 			
+    }  
+	printf("body:%s\n", hm_pa.body.p); 	
+	// printf(sock_fd, hm_pa.body.p, hm_pa.method.size, 0); 
+	// if ( ret == -1 ) 	//send the parased buffer back to client.
+	// {
+        // perror("send failed");
+        // exit(EXIT_FAILURE);
+    // }
+    printf("send to client_sock_fd=%d done\n", sock_fd);
+}
 
 /**
   *@brief  send the parased buffer back to client.
@@ -209,43 +295,11 @@ void send_message (int sock_fd,  http_message_t hm_pa)
 	
     ret = send(sock_fd, hm_pa.method.p, hm_pa.method.size, 0); 		
     ret = send(sock_fd, hm_pa.uri.p, hm_pa.uri.size, 0); 	
+	printf("ret = %d\n", ret);
     ret = send(sock_fd, hm_pa.protocol.p, hm_pa.protocol.size, 0); 	
 	
-	ret = send(sock_fd, "1231564\r\n", 10, 0); 
-	
-    for(i=1; i<line_num; i++)
-    {
-        ret = send(sock_fd, hm_pa.header[i].p, hm_pa.header[i].size, 0); 			
-        ret = send(sock_fd, hm_pa.header_value[i].p, hm_pa.header_value[i].size, 0); 			
-    }
-
-	ret = send(sock_fd, hm_pa.body.p, hm_pa.method.size, 0); 
-	if ( ret == -1 ) 	//send the parased buffer back to client.
-	{
-        perror("send failed");
-        exit(EXIT_FAILURE);
-    }
-    printf("send to client_sock_fd=%d done\n", sock_fd);
-}
-*/
-/**
-  *@brief  send the parased buffer back to client.
-  *@param  sock_fd - the file descriptor created by 'accept'.
-  *		   http_message_t - the pointer to the struct 'http_message',which contains the parsed message. 
-  *@retval none
-  */
-void send_message (int sock_fd,  http_message_t hm_pa)	
-{
-	int ret,i,a = 5;
-	
-    // ret = send(sock_fd, hm_pa.method.p, hm_pa.method.size, 0); 		
-    // ret = send(sock_fd, hm_pa.uri.p, hm_pa.uri.size, 0); 
-	// ret = send(sock_fd, "1231564", 7, 0);	
-	// printf("ret = %d\n", ret);
-    //ret = send(sock_fd, hm_pa.protocol.p, hm_pa.protocol.size, 0); 	
-	
 	ret = send(sock_fd, hm_pa.header[2].p, hm_pa.header[2].size, 0); 
-printf("ret = %d\n", ret);	
+	printf("ret = %d\n", ret);	
     // ret = send(sock_fd, hm_pa.header_value[2].p, hm_pa.header_value[2].size, 0); 
 	// ret = send(sock_fd, "1231564\r\n", 10, 0);
 	 	
@@ -258,7 +312,7 @@ printf("ret = %d\n", ret);
     // }
 
 	// ret = send(sock_fd, hm_pa.body.p, hm_pa.method.size, 0); 
-	// */
+	// 
 	if ( ret == -1 ) 	//send the parased buffer back to client.
 	{
         perror("send failed");
@@ -267,7 +321,7 @@ printf("ret = %d\n", ret);
     printf("send to client_sock_fd=%d done\n", sock_fd);
 }
 	
-	
+*/	
 	
 int main(int argc, char *argv[]) {
 	
@@ -359,7 +413,8 @@ int main(int argc, char *argv[]) {
 				/*parase the buffer from client.*/
 				hm_toclient = parse_buf(buffer);	
 				/*send message after parase to client.*/
-				send_message(i, hm_toclient);		
+				// send_message(i, hm_toclient);		
+				printf_message(i, hm_toclient);		
                 
 				if ( close(i) == -1 ) 						//close this 'client_sock_fd'
 				{
